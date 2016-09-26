@@ -23,7 +23,7 @@ pg.connect(conString, function (err, client, done) {
         }
 
 var query_string="select ordered.restaurant_id,ordered.outlet_id,ordered.orderedqty,pckd.pkdquantity,\
-owl.name as outletname,r.name as restaurant_name,r.entity  from ( \
+owl.name as outletname,owl.short_name as outlet_short_name,r.name as restaurant_name,r.short_name as restaurant_short_name,r.entity  from ( \
 with barcodes as (select x.barlist->>'restaurant_id' as restaurant_id,x.barlist->>'barcode' as barcode from( select json_array_elements($1) as barlist ) as x ) \
 select \
 coalesce(grpd.restaurant_id,batchdata.restaurant_id) as restaurant_id, \
@@ -44,8 +44,8 @@ right outer join ( select p.restaurant_id,p.outlet_id , sum(pm.quantity) as orde
 on p.id=pm.purchase_order_id where scheduled_delivery_time::date=current_date \
 group by p.restaurant_id,p.outlet_id)  as ordered \
 on pckd.restaurant_id=ordered.restaurant_id and pckd.outlet_id=ordered.outlet_id join outlet owl on ordered.outlet_id=owl.id \
-where (case when coalesce($2,ordered.restaurant_id)=$2 then $2 else ordered.restaurant_id end) = ordered.restaurant_id \
-join restaurant r on ordered.restaurant_id=r.id "
+join restaurant r on ordered.restaurant_id=r.id \
+where (case when coalesce($2,ordered.restaurant_id)=$2 then $2 else ordered.restaurant_id end) = ordered.restaurant_id "
 
 client.query(query_string,
             [JSON.stringify(response),restaurant_id],
@@ -397,9 +397,9 @@ left outer join \
        on pm.purchase_order_id = pbo.purchase_order_id and pm.food_item_id = pbo.food_item_id  \
 group by po.restaurant_id,po.outlet_id,pm.food_item_id)  \
 select podata.taken,podata.outlet_id,podata.restaurant_id,sales.sold ,  \
-sales.food_item_name,sales.restaurant_name,sales.outlet_name from podata \
+sales.food_item_name,sales.restaurant_name,sales.outlet_name,sales.outlet_short_name from podata \
  join \
-(select sum(soi.quantity) as sold,out.id as outlet_id, out.name as outlet_name, res.id as restaurant_id, \
+(select sum(soi.quantity) as sold,out.id as outlet_id, out.name as outlet_name,out.short_name as outlet_short_name res.id as restaurant_id, \
 fi.id as food_item_id,fi.name as food_item_name,res.name as restaurant_name from sales_order so \
                         inner join sales_order_items soi on soi.sales_order_id=so.id  \
                         inner join food_item fi on fi.id=soi.food_item_id \
