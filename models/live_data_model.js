@@ -23,7 +23,7 @@ pg.connect(conString, function (err, client, done) {
         }
 
 var query_string="select ordered.restaurant_id,ordered.outlet_id,ordered.orderedqty,pckd.pkdquantity,\
-owl.name as outletname,owl.short_name as outlet_short_name,r.name as restaurant_name,r.short_name as restaurant_short_name,r.entity  from ( \
+owl.name as outletname,owl.short_name as outlet_short_name,r.name as restaurant_name,r.short_name as restaurant_short_name,r.entity ,ordered.session_name from ( \
 with barcodes as (select x.barlist->>'restaurant_id' as restaurant_id,x.barlist->>'barcode' as barcode from( select json_array_elements($1) as barlist ) as x ) \
 select \
 coalesce(grpd.restaurant_id,batchdata.restaurant_id) as restaurant_id, \
@@ -40,9 +40,14 @@ where scheduled_delivery_time::date=current_date \
 group by p.restaurant_id, p.outlet_id ) as batchdata \
    on grpd.restaurant_id=batchdata.restaurant_id and grpd.outlet_id=batchdata.outlet_id \
 ) as pckd  \
-right outer join ( select p.restaurant_id,p.outlet_id , sum(pm.quantity) as orderedqty from purchase_order p join purchase_order_master_list pm \
-on p.id=pm.purchase_order_id where scheduled_delivery_time::date=current_date \
-group by p.restaurant_id,p.outlet_id)  as ordered \
+right outer join ( select p.restaurant_id,p.outlet_id ,  sum(pm.quantity) as orderedqty,m.name as session_name from purchase_order p join purchase_order_master_list pm \
+on p.id=pm.purchase_order_id join menu_bands m  on \
+p.outlet_id=m.outlet_id where \
+scheduled_delivery_time::date=now()::Date \
+and now()::time \
+between m.start_time and m.end_time  and \
+scheduled_delivery_time::time between m.start_time and m.end_time \
+group by p.restaurant_id,p.outlet_id,m.name )  as ordered \
 on pckd.restaurant_id=ordered.restaurant_id and pckd.outlet_id=ordered.outlet_id join outlet owl on ordered.outlet_id=owl.id \
 join restaurant r on ordered.restaurant_id=r.id \
 where (case when coalesce($2,ordered.restaurant_id)=$2 then $2 else ordered.restaurant_id end) = ordered.restaurant_id "

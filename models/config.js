@@ -1,5 +1,5 @@
 var pg = require('pg');
-var DB_CONN="postgres://postgres:postgres@192.168.1.147/foodbox19092016";
+var DB_CONN="postgres://postgres:postgres@192.168.1.147:5432/foodbox19092016";
 //var DB_CONN="postgres://postgres:shlok123@192.168.0.75/foodbox";
 module.exports = {
     dbConn:  DB_CONN || "postgres://localhost/testdb",
