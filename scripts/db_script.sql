@@ -46,11 +46,11 @@ INSERT INTO public.session(
 'Late Dinner','19:00:00','23:00:00',7);
 
 
-ALTER TABLE purchase_order ADD FOREIGN KEY (session_name)  REFERENCES session(name);
+--ALTER TABLE purchase_order ADD FOREIGN KEY (session_name)  REFERENCES session(name);
 
-ALTER TABLE menu_bands ADD FOREIGN KEY (name)  REFERENCES session(name);
+--ALTER TABLE menu_bands ADD FOREIGN KEY (name)  REFERENCES session(name);
 
-ALTER TABLE volume_paln_automation ADD FOREIGN KEY (session)  REFERENCES session(name);
+--ALTER TABLE volume_paln_automation ADD FOREIGN KEY (session)  REFERENCES session(name);
 
 
 // alphanumeric_generator to get mpin 

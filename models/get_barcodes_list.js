@@ -27,7 +27,7 @@ _.map(purchase_order_array, function (item) {
         var poid = po_id
         var item_data = item.restaurant_data[poid]
         _.map(_.pluck(item_data, 'barcodes'), function (barcode) {
-           item_array.push({ restaurant_id: item.restaurant_id, barcode: barcode })
+           item_array.push({ restaurant_id: item.restaurant_id,po_id:poid, barcode: barcode })
         })
     }
 })
@@ -37,9 +37,9 @@ _.map(purchase_order_array, function (item) {
         var restaurant_barcodes_array=[]
 _.map(item_array,function(key){
 var res_id=key.restaurant_id
-
+var po_id=key.po_id;
     for (var bar_key in key.barcode) {
-                            var values = { restaurant_id: res_id, barcode: key.barcode[bar_key] }
+                            var values = { restaurant_id: res_id,po_id:po_id, barcode: key.barcode[bar_key] }
                             restaurant_barcodes_array.push(values);
                     } 
     })

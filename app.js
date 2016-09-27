@@ -70,6 +70,7 @@ app.get('/generate_pin', function (req, res) {
                 return;
             }
             if (response) {
+              
                 var encrypted_response = encrypt_decrypt.text_encrypt(response.alphanumeric_generator)
                 live_data_model.update_pin_to_restaurant(encrypted_response, restaurant_id, function (err, update_response) {
                     if (err) {

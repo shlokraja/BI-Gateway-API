@@ -24,31 +24,33 @@ pg.connect(conString, function (err, client, done) {
 
 var query_string="select ordered.restaurant_id,ordered.outlet_id,ordered.orderedqty,pckd.pkdquantity,\
 owl.name as outletname,owl.short_name as outlet_short_name,r.name as restaurant_name,r.short_name as restaurant_short_name,r.entity ,ordered.session_name from ( \
-with barcodes as (select x.barlist->>'restaurant_id' as restaurant_id,x.barlist->>'barcode' as barcode from( select json_array_elements($1) as barlist ) as x ) \
+with barcodes as (select x.barlist->>'restaurant_id' as restaurant_id,x.barlist->>'barcode' as barcode , x.barlist->>'po_id' as po_id \
+ from( select json_array_elements($1) as barlist  ) as x where substr(x.barlist->>'barcode',13,8)=to_char(now(),'DDMMYYYY') ) \
 select \
 coalesce(grpd.restaurant_id,batchdata.restaurant_id) as restaurant_id, \
 coalesce(grpd.outlet_id,batchdata.outlet_id) as outlet_id, \
+coalesce(grpd.po_id,batchdata.purchase_order_id) as purchase_order_id, \
 coalesce(grpd.fbqty,batchdata.batchqty) as pkdquantity \
-from (select restaurant_id::int as restaurant_id,substr(barcode,3,3)::int as outlet_id , \
+from (select restaurant_id::int as restaurant_id,substr(barcode,3,3)::int as outlet_id ,po_id \
   count(barcode) as fbqty from barcodes  group by \
- restaurant_id,substr(barcode,3,3)::int) as grpd \
+ restaurant_id,substr(barcode,3,3)::int,po_id) as grpd \
 full outer join \
- (select  p.restaurant_id,p.outlet_id as outlet_id, sum(quantity) as batchqty \
+ (select  p.restaurant_id,p.outlet_id as outlet_id, ,p.id as purchase_order_id,sum(quantity) as batchqty \
 from purchase_order_batch b join purchase_order p \
   on b.purchase_order_id=p.id \
 where scheduled_delivery_time::date=current_date \
-group by p.restaurant_id, p.outlet_id ) as batchdata \
+group by p.restaurant_id, p.outlet_id,p.id ) as batchdata \
    on grpd.restaurant_id=batchdata.restaurant_id and grpd.outlet_id=batchdata.outlet_id \
 ) as pckd  \
-right outer join ( select p.restaurant_id,p.outlet_id ,  sum(pm.quantity) as orderedqty,m.name as session_name from purchase_order p join purchase_order_master_list pm \
+right outer join ( select p.restaurant_id,p.outlet_id , p.id as purchase_order_id, sum(pm.quantity) as orderedqty,m.name as session_name from purchase_order p join purchase_order_master_list pm \
 on p.id=pm.purchase_order_id join menu_bands m  on \
 p.outlet_id=m.outlet_id where \
 scheduled_delivery_time::date=now()::Date \
 and now()::time \
 between m.start_time and m.end_time  and \
 scheduled_delivery_time::time between m.start_time and m.end_time \
-group by p.restaurant_id,p.outlet_id,m.name )  as ordered \
-on pckd.restaurant_id=ordered.restaurant_id and pckd.outlet_id=ordered.outlet_id join outlet owl on ordered.outlet_id=owl.id \
+group by p.restaurant_id,p.outlet_id,m.name,p.id )  as ordered \
+on pckd.restaurant_id=ordered.restaurant_id and pckd.outlet_id=ordered.outlet_id and pckd.purchase_order_id=ordered.purchase_order_id join outlet owl on ordered.outlet_id=owl.id \
 join restaurant r on ordered.restaurant_id=r.id \
 where (case when coalesce($2,ordered.restaurant_id)=$2 then $2 else ordered.restaurant_id end) = ordered.restaurant_id "
 
