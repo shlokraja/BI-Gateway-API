@@ -29,13 +29,13 @@ with barcodes as (select x.barlist->>'restaurant_id' as restaurant_id,x.barlist-
 select \
 coalesce(grpd.restaurant_id,batchdata.restaurant_id) as restaurant_id, \
 coalesce(grpd.outlet_id,batchdata.outlet_id) as outlet_id, \
-coalesce(grpd.po_id,batchdata.purchase_order_id) as purchase_order_id, \
+coalesce(grpd.po_id::int,batchdata.purchase_order_id::int) as purchase_order_id, \
 coalesce(grpd.fbqty,batchdata.batchqty) as pkdquantity \
-from (select restaurant_id::int as restaurant_id,substr(barcode,3,3)::int as outlet_id ,po_id \
+from (select restaurant_id::int as restaurant_id,substr(barcode,3,3)::int as outlet_id ,po_id, \
   count(barcode) as fbqty from barcodes  group by \
  restaurant_id,substr(barcode,3,3)::int,po_id) as grpd \
 full outer join \
- (select  p.restaurant_id,p.outlet_id as outlet_id, ,p.id as purchase_order_id,sum(quantity) as batchqty \
+ (select  p.restaurant_id,p.outlet_id as outlet_id ,p.id as purchase_order_id,sum(quantity) as batchqty \
 from purchase_order_batch b join purchase_order p \
   on b.purchase_order_id=p.id \
 where scheduled_delivery_time::date=current_date \
@@ -313,13 +313,10 @@ var get_sales_summary = function (restaurant_id, callback) {
             return callback(err, null)
         }
         client.query(
-            "select s.outlet_id,f.location, sum(f.mrp*si.quantity) as sale ,'Daily' as period from food_item f, \
+            "select s.outlet_id,f.location,sum(f.mrp*si.quantity) as sale ,'Daily' as period from food_item f, \
             sales_order_items si, sales_order s where s.id=si.sales_order_id and \
             si.food_item_id=f.id and s.outlet_id=f.outlet_id and f.restaurant_id=$1 \
-            and s.time > (select max(time) \
-            from supplies s, supplies_master_list m \
-            where s.phase='start_of_day' \
-            and s.food_item_id=m.food_item_id ) \
+            and s.time >= now()::date \
             group by f.location , s.outlet_id \
             union all \
             select s.outlet_id,f.location, sum(f.mrp*si.quantity) as sale,'Monthly' as period  from food_item f, \
