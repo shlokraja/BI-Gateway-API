@@ -179,7 +179,7 @@ var initial_seed_data_signup = function (callback) {
                         inner join food_item fi on fi.restaurant_id=res.id \
                         inner join outlet out on out.id=fi.outlet_id \
                         inner join restaurant_config rcon on rcon.restaurant_id=res.id \
-                        where res.id>0 order by res.name',
+                        where res.id>0 and res.active=true order by res.name',
                 [],
                 function (err, result) {
                     if (err) {
@@ -269,9 +269,9 @@ var get_sales_data = function (restaurant_id, callback) {
         if (err) {
             return callback(err, null)
         }
-        client.query('select sum(batch.quantity) as taken from purchase_order po \
-                     inner join purchase_order_batch batch on batch.purchase_order_id=po.id \
-                    where po.restaurant_id=$1 and batch.received_time::date=now()::date'
+        client.query('select sum(polist.quantity) as taken from purchase_order  po \
+        inner join purchase_order_master_list polist on polist.purchase_order_id=po.id \
+        where po.restaurant_id=$1 and po.scheduled_delivery_time::date=now()::date '
             , [restaurant_id],
             function (query_err, taken_result) {
                 done();
@@ -403,7 +403,7 @@ group by po.restaurant_id,po.outlet_id,pm.food_item_id)  \
 select podata.taken,podata.outlet_id,podata.restaurant_id,sales.sold ,  \
 sales.food_item_name,sales.restaurant_name,sales.outlet_name,sales.outlet_short_name from podata \
  join \
-(select sum(soi.quantity) as sold,out.id as outlet_id, out.name as outlet_name,out.short_name as outlet_short_name res.id as restaurant_id, \
+(select sum(soi.quantity) as sold,out.id as outlet_id, out.name as outlet_name,out.short_name as outlet_short_name, res.id as restaurant_id, \
 fi.id as food_item_id,fi.name as food_item_name,res.name as restaurant_name from sales_order so \
                         inner join sales_order_items soi on soi.sales_order_id=so.id  \
                         inner join food_item fi on fi.id=soi.food_item_id \
