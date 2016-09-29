@@ -10,19 +10,19 @@ format.extend(String.prototype);
 var Firebase = require('firebase');
 var barcode_list = require('../models/get_barcodes_list');
 
-var get_barcode_list_from_firebase = function (firebase_url,restaurant_id,callback) {
+var get_barcode_list_from_firebase = function (firebase_url, restaurant_id, callback) {
 
     barcode_list.get_barcode_list(firebase_url, function (err, response) {
         if (err) {
             return callback(new Error(err, null));
         }
         if (response) {
-pg.connect(conString, function (err, client, done) {
-        if (err) {
-            return callback(new Error(err, null));
-        }
+            pg.connect(conString, function (err, client, done) {
+                if (err) {
+                    return callback(new Error(err, null));
+                }
 
-var query_string="select ordered.restaurant_id,ordered.outlet_id,ordered.orderedqty,pckd.pkdquantity,\
+                var query_string = "select ordered.restaurant_id,ordered.outlet_id,ordered.orderedqty,pckd.pkdquantity,\
 owl.name as outletname,owl.short_name as outlet_short_name,r.name as restaurant_name,r.short_name as restaurant_short_name,r.entity ,ordered.session_name from ( \
 with barcodes as (select x.barlist->>'restaurant_id' as restaurant_id,x.barlist->>'barcode' as barcode , x.barlist->>'po_id' as po_id \
  from( select json_array_elements($1) as barlist  ) as x where substr(x.barlist->>'barcode',13,8)=to_char(now(),'DDMMYYYY') ) \
@@ -54,23 +54,23 @@ on pckd.restaurant_id=ordered.restaurant_id and pckd.outlet_id=ordered.outlet_id
 join restaurant r on ordered.restaurant_id=r.id \
 where (case when coalesce($2,ordered.restaurant_id)=$2 then $2 else ordered.restaurant_id end) = ordered.restaurant_id "
 
-client.query(query_string,
-            [JSON.stringify(response),restaurant_id],
-            function (query_err, restaurant) {
-                done();
-                if (query_err) {
-                    return callback(new Error(query_err, null));
-                }
-                if (restaurant.rows.length > 0) {
-                    return callback(null, restaurant.rows);
-                } else {
-                    return callback(new Error("No data found"));
-                }
-            });
-})
-        }else {
-                    return callback(new Error("No data found"));
-                }
+                client.query(query_string,
+                    [JSON.stringify(response), restaurant_id],
+                    function (query_err, restaurant) {
+                        done();
+                        if (query_err) {
+                            return callback(new Error(query_err, null));
+                        }
+                        if (restaurant.rows.length > 0) {
+                            return callback(null, restaurant.rows);
+                        } else {
+                            return callback(new Error("No data found"));
+                        }
+                    });
+            })
+        } else {
+            return callback(new Error("No data found"));
+        }
     })
 }
 
@@ -162,41 +162,48 @@ order by ses.sequence",
 };
 
 var initial_seed_data_signup = function (callback) {
-    async.parallel({
-        city: function (callback) {
-            config.query('select short_name ,name from city',
-                [],
-                function (err, result) {
-                    if (err) {
-                        return callback('error running query' + err, null)
-                    }
-                    callback(null, result.rows)
-                })
-        },
+    pg.connect(conString, function (err, client, done) {
+        if (err) {
+            return callback(new Error(err, null));
+        }
+        async.parallel({
+            city: function (callback) {
+                client.query('select short_name ,name from city',
+                    [],
+                    function (err, result) {
+                        done();
+                        if (err) {
+                            return callback('error running query' + err, null)
+                        }
+                        callback(null, result.rows)
+                    })
+            },
 
-        restaurant: function (callback) {
-            config.query('select distinct res.id,res.name as name,res.short_name,rcon.sender_email as mail_id,out.city as city from restaurant res \
+            restaurant: function (callback) {
+                client.query('select distinct res.id,res.name as name,res.short_name,rcon.sender_email as mail_id,out.city as city from restaurant res \
                         inner join food_item fi on fi.restaurant_id=res.id \
                         inner join outlet out on out.id=fi.outlet_id \
                         inner join restaurant_config rcon on rcon.restaurant_id=res.id \
                         where res.id>0 and res.active=true order by res.name',
-                [],
-                function (err, result) {
-                    if (err) {
-                        callback('error running query' + err, null)
-                        return
-                    }
-                    return callback(null, result.rows)
-                })
-        }
-    },
-
-        function (err, results) {
-            if (err) {
-                return callback(new Error('Sign up ' + err))
+                    [],
+                    function (err, result) {
+                        done();
+                        if (err) {
+                            callback('error running query' + err, null)
+                            return
+                        }
+                        return callback(null, result.rows)
+                    })
             }
-            return callback(null, results)
-        })
+        },
+
+            function (err, results) {
+                if (err) {
+                    return callback(new Error('Sign up ' + err))
+                }
+                return callback(null, results)
+            })
+    });
 }
 
 var get_random_pin = function (callback) {
@@ -428,6 +435,81 @@ on podata.outlet_id=sales.outlet_id and podata.restaurant_id =sales.restaurant_i
 };
 
 
+var get_outlet_sales_data_ctrlctr = function (outlet_id, callback) {
+    pg.connect(conString, function (err, client, done) {
+        if (err) {
+            return callback(err, null)
+        }
+
+        client.query("with podata as( \
+        select po.restaurant_id,po.outlet_id,pm.food_item_id,sum(coalesce(pbo.quantity,pm.quantity)) as taken \
+        from (select * from purchase_order where outlet_id=$1 and to_char(scheduled_delivery_time,'DDMMYYYY')= to_char(now(),'DDMMYYYY')) as  po\
+        join purchase_order_master_list pm  on po.id=pm.purchase_order_id\
+        left outer join\
+        (select purchase_order_id,substr(pb.barcode,3,3) as outlet, \
+        base36_decode(substring(pb.barcode from 9 for 4))::integer as food_item_id, \
+        sum(quantity) as quantity from purchase_order_batch pb \
+        where substr(barcode,13,8) = to_char(now(),'DDMMYYYY') and substr(pb.barcode,3,3)::int=$1 \
+        group by outlet,food_item_id,purchase_order_id ) as pbo \
+        on pm.purchase_order_id = pbo.purchase_order_id and pm.food_item_id = pbo.food_item_id \
+        group by po.restaurant_id,po.outlet_id,pm.food_item_id) \
+        select podata.outlet_id,sales.outlet_name,sales.outlet_short_name,podata.restaurant_id,sales.restaurant_name ,sales.restaurant_short_name, \
+        sum(podata.taken) as taken,sum(sales.sold) as sold from podata \
+        join (select sum(soi.quantity) as sold,out.id as outlet_id, out.name as outlet_name,out.short_name as outlet_short_name, res.id as restaurant_id, \
+        fi.id as food_item_id,res.name as restaurant_name,res.short_name as restaurant_short_name from sales_order so \
+        inner join sales_order_items soi on soi.sales_order_id=so.id \
+        inner join food_item fi on fi.id=soi.food_item_id \
+        inner join outlet out on  out.id=so.outlet_id \
+        inner join restaurant res on res.id=fi.restaurant_id \
+        where  out.id=$1 and to_char(time,'DD-MM-YYYY')=to_char(now(),'DD-MM-YYYY') \
+        group by so.outlet_id,out.name,soi.food_item_id,fi,res.name ,res.id,out.id ,fi.id) \
+        as sales \
+        on podata.outlet_id=sales.outlet_id and podata.restaurant_id =sales.restaurant_id and podata.food_item_id=sales.food_item_id \
+        group by  podata.outlet_id,sales.outlet_name,sales.outlet_short_name,podata.restaurant_id,sales.restaurant_name ,sales.restaurant_short_name;" 
+            , [outlet_id],
+            function (query_err, taken_result) {
+                done();
+                if (query_err) {
+                    return callback(query_err, null)
+                }
+                if (taken_result.rows.length > 0) {
+                    return callback(null, { taken_data: taken_result.rows })
+                } else {
+                    return callback(new Error('No data found'))
+                }
+            })
+    });
+};
+
+var get_outlet_wise_vpa_data = function (restaurant_id, callback) {
+    pg.connect(conString, function (err, client, done) {
+        if (err) {
+            return callback(new Error(err, null));
+        }
+        client.query(
+            "select sum(vpa.qty)::numeric as qty,out.name as outlet_name, trim(fi.name) as name,vpa.session \
+            from volume_plan_automation vpa \
+            inner join food_item fi on fi.id=vpa.food_item_id \
+            inner join session ses on ses.name=vpa.session \
+            inner join outlet out on out.id=fi.outlet_id \
+            where vpa.restaurant_id = $1 and vpa.date = current_date \
+            group by  out.name, trim(fi.name),vpa.session,ses.sequence \
+            order by out.name,ses.sequence",
+            [restaurant_id],
+            function (query_err, restaurant) {
+                done();
+                if (query_err) {
+                    return callback(new Error(query_err, null));
+                }
+                if (restaurant.rows.length > 0) {
+                    return callback(null, restaurant.rows);
+                } else {
+                    return callback(new Error("No data found"));
+                }
+            }
+        );
+    });
+};
 
 module.exports = {
     get_live_packing_data: get_live_packing_data,
@@ -439,5 +521,7 @@ module.exports = {
     get_sales_data: get_sales_data,
     get_sales_summary: get_sales_summary,
     get_sales_data_ctrlctr: get_sales_data_ctrlctr,
-    get_barcode_list_from_firebase: get_barcode_list_from_firebase
+    get_outlet_sales_data_ctrlctr:get_outlet_sales_data_ctrlctr,
+    get_barcode_list_from_firebase: get_barcode_list_from_firebase,
+    get_outlet_wise_vpa_data: get_outlet_wise_vpa_data
 }

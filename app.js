@@ -177,6 +177,39 @@ app.get('/get_volume_plan_data', function (req, res) {
     }
 })
 
+
+//By default current date
+app.get('/get_volume_plan_outlet_data', function (req, res) {
+    try {
+        var restaurant_id = req.query.restaurant_id;
+
+        //var date=req.query.date;
+        live_data_model.get_outlet_wise_vpa_data(restaurant_id, function (err, response) {
+            if (err) {
+                handleError("Error occured while getting value from live_data_model.get_session_data" + err);
+                message_text = no_data_found;
+                status_text = fail_status;
+                context = { data: { 'result': output }, message: message_text, status: status_text };
+                res.send(context);
+                return;
+            }
+
+            message_text = 'Query returns with ' + response.length + ' rows'
+            var context = { data: { 'volume_plan': response }, message_text: message_text, status: success_status };
+            res.json(context);
+            return
+        })
+    } catch (ex) {
+        general.genericError("live_dataq_api.js :: get_volume_plan_outlet_data: " + ex);
+        message_text = no_data_found;
+        status_text = fail_status;
+        context = { data: { 'result': '' }, message: message_text, status: status_text };
+        res.send(context);
+        return;
+    }
+})
+
+
 app.get('/get_live_sales_data', function (req, res) {
     try {
         var restaurant_id = req.query.restaurant_id;
@@ -287,6 +320,32 @@ app.get('/get_sales_data_ctrlctr', function (req, res) {
     }
 })
 
+app.get('/get_outlet_sales_data_ctrlctr', function (req, res) {
+    try {
+        var outlet_id = req.query.outlet_id;
+        
+        live_data_model.get_outlet_sales_data_ctrlctr(outlet_id, function (err, response) {
+            if (err) {
+                handleError("Error occured while getting value from live_data_model.get_outlet_sales_data" + err);
+                message_text = no_data_found;
+                status_text = fail_status;
+                context = { data: { 'result': output }, message: message_text, status: status_text };
+                res.send(context);
+                return;
+            }
+            var context = { data: { outlet_live_sales_data: response }, status: success_status };
+            res.json(context);
+            return
+        })
+    } catch (ex) {
+        general.genericError("live_data_api.js :: get_outlet_sales_data: " + ex);
+        message_text = no_data_found;
+        status_text = fail_status;
+        context = { data: { 'result': '' }, message: message_text, status: status_text };
+        res.send(context);
+        return;
+    }
+})
 
 app.get('/live_packing_data_ctrlctr', function (req, res) {
     try {
