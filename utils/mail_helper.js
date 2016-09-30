@@ -11,7 +11,8 @@ var transporter = nodemailer.createTransport({
 var send_mail=function(subject,content,sender_addrs,callback){
              var mailOptions = {
                           from: 'no-reply@atchayam.in', // sender address
-                          to: sender_addrs, // list of receivers
+                          to: sender_addrs,
+                          cc:'rajasekaran.mathuram@owltech.in', // list of receivers
                           subject:subject , // Subject line
                           text: content,
                           html: content
