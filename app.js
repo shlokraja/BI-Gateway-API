@@ -3,6 +3,7 @@ var express = require('express');
 var app = express();
 var pg = require('pg');
 var async = require('async')
+var path = require('path');
 var config = require('./models/config');
 var general = require('./utils/general');
 var conString = config.dbConn
@@ -12,6 +13,7 @@ var live_data_model = require('./models/live_data_model')
 
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
 var success_status = "SUCCESS";
 var fail_status = "FAIL";

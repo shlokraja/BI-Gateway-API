@@ -23,7 +23,7 @@ var get_barcode_list_from_firebase = function (firebase_url, restaurant_id, call
                 }
 
                 var query_string = "select ordered.restaurant_id,ordered.outlet_id,ordered.orderedqty,pckd.pkdquantity,\
-owl.name as outletname,owl.short_name as outlet_short_name,r.name as restaurant_name,r.short_name as restaurant_short_name,r.entity ,ordered.session_name from ( \
+owl.name as outletname,owl.short_name as outlet_short_name,r.name as restaurant_name,r.short_name as restaurant_short_name,'/images/'||r.short_name||'.png' as image_url,r.entity ,ordered.session_name from ( \
 with barcodes as (select x.barlist->>'restaurant_id' as restaurant_id,x.barlist->>'barcode' as barcode , x.barlist->>'po_id' as po_id \
  from( select json_array_elements($1) as barlist  ) as x where substr(x.barlist->>'barcode',13,8)=to_char(now(),'DDMMYYYY') ) \
 select \
@@ -454,6 +454,7 @@ var get_outlet_sales_data_ctrlctr = function (outlet_id, callback) {
         on pm.purchase_order_id = pbo.purchase_order_id and pm.food_item_id = pbo.food_item_id \
         group by po.restaurant_id,po.outlet_id,pm.food_item_id) \
         select podata.outlet_id,sales.outlet_name,sales.outlet_short_name,podata.restaurant_id,sales.restaurant_name ,sales.restaurant_short_name, \
+        '/images/'||sales.restaurant_short_name||'.png' as image_url, \
         sum(podata.taken) as taken,sum(sales.sold) as sold from podata \
         join (select sum(soi.quantity) as sold,out.id as outlet_id, out.name as outlet_name,out.short_name as outlet_short_name, res.id as restaurant_id, \
         fi.id as food_item_id,res.name as restaurant_name,res.short_name as restaurant_short_name from sales_order so \
