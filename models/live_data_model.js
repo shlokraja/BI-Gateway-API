@@ -287,15 +287,22 @@ var get_sales_data = function (restaurant_id, callback) {
                 }
                 if (taken_result) {
                     client.query(
-                        "select \
-                        sum(soi.quantity) as qty,out.name as outlet_name, \
+                        "select sum(soi.quantity) as qty,out.name as outlet_name, \
                         fi.name as food_item_name from sales_order so \
                         inner join sales_order_items soi on soi.sales_order_id=so.id \
                         inner join food_item fi on fi.id=soi.food_item_id \
                         inner join outlet out on  out.id=so.outlet_id \
-                        where time::date=now()::date and fi.restaurant_id=$1 \
+                        where time >= CASE WHEN(to_char(now(),'yyyy-MM-dd HH:MI')::time < out.start_of_day) THEN \
+                        CONCAT(to_char(now() - interval '1' day,'yyyy-MM-dd '),out.start_of_day)::timestamp \
+                        else \
+                        CONCAT(to_char(now(),'yyyy-MM-dd '),out.start_of_day)::timestamp END \
+                        and time < CASE WHEN(to_char(now(),'yyyy-MM-dd HH:MI')::time > out.start_of_day) THEN \
+                        CONCAT(to_char(now() + interval '1' day,'yyyy-MM-dd '),out.start_of_day)::timestamp \
+                        else \
+                        CONCAT(to_char(now(),'yyyy-MM-dd '),out.start_of_day)::timestamp END \
+                        and fi.restaurant_id=$1 \
                         group by so.outlet_id,out.name,soi.food_item_id,fi.name \
-                        order by out.name ",
+                        order by out.name",
                         [restaurant_id],
                         function (query_err, sales_data) {
                             done();
@@ -319,23 +326,28 @@ var get_sales_summary = function (restaurant_id, callback) {
         if (err) {
             return callback(err, null)
         }
+
         client.query(
-            "select s.outlet_id,f.location,sum(f.mrp*si.quantity) as sale ,'Daily' as period from food_item f, \
-            sales_order_items si, sales_order s where s.id=si.sales_order_id and \
-            si.food_item_id=f.id and s.outlet_id=f.outlet_id and f.restaurant_id=$1 \
-            and s.time >= now()::date \
-            group by f.location , s.outlet_id \
+            "select s.outlet_id,f.location,sum(f.mrp*si.quantity) as sale ,'Daily' as period from food_item f \
+            inner join sales_order_items si on si.food_item_id=f.id \
+            inner join sales_order s on s.id=si.sales_order_id \
+            inner join outlet o on o.id=s.outlet_id \
+            where  f.restaurant_id=$1  and \
+            case when now()::time < start_of_day  then \
+            s.time >= (now()::date +CAST(start_of_day||' hours' AS Interval) - interval '24 hour') and s.time<=(now()::date + CAST(start_of_day||' hours' AS Interval)) \
+            else s.time>(now()::date+ CAST(start_of_day ||' hours' AS Interval))  and s.time< ((now()::date +CAST(start_of_day||' hours' AS Interval) + interval '24 hour')) \
+            end group by f.location , s.outlet_id \
             union all \
-            select s.outlet_id,f.location, sum(f.mrp*si.quantity) as sale,'Monthly' as period  from food_item f, \
-            sales_order_items si, sales_order s where s.id=si.sales_order_id and f.restaurant_id=$1 and  \
-            si.food_item_id=f.id and s.outlet_id=f.outlet_id  \
+            select s.outlet_id,f.location, sum(f.mrp*si.quantity) as sale,'Monthly' as period  from food_item f,\
+            sales_order_items si, sales_order s where s.id=si.sales_order_id and f.restaurant_id=$1 and \
+            si.food_item_id=f.id and s.outlet_id=f.outlet_id \
             and to_char(time,'MMYYYY') = to_char(now(),'MMYYYY') \
             group by f.location , s.outlet_id \
             union all \
             select s.outlet_id,f.location, sum(f.mrp*si.quantity) as sale,'Weekly' as period  from food_item f, \
             sales_order_items si, sales_order s where s.id=si.sales_order_id and f.restaurant_id=$1 and \
             si.food_item_id=f.id and s.outlet_id=f.outlet_id  \
-            and date_part('week',time) = date_part('week',now())  \
+            and date_part('week',time) = date_part('week',now()) \
             group by f.location , s.outlet_id \
             union all \
             select s.outlet_id,f.location, sum(f.mrp*si.quantity) as sale,'Quarterly' as period  from food_item f, \
@@ -393,32 +405,63 @@ var get_sales_data_ctrlctr = function (outlet_id, callback) {
     pg.connect(conString, function (err, client, done) {
         if (err) {
             return callback(err, null)
-        }
+        }        
 
         client.query("with podata as( \
-select po.restaurant_id,po.outlet_id,pm.food_item_id,sum(coalesce(pbo.quantity,pm.quantity)) as taken \
- from (select * from purchase_order where outlet_id=$1 and to_char(scheduled_delivery_time,'DDMMYYYY')= to_char(now(),'DDMMYYYY')) as  po \
- join purchase_order_master_list pm  on po.id=pm.purchase_order_id \
-left outer join \
-    (select purchase_order_id,substr(pb.barcode,3,3) as outlet, \
-        base36_decode(substring(pb.barcode from 9 for 4))::integer as food_item_id,  \
-    sum(quantity) as quantity from purchase_order_batch pb \
-     where substr(barcode,13,8) = to_char(now(),'DDMMYYYY') and substr(pb.barcode,3,3)::int=$1  \
-    group by outlet,food_item_id,purchase_order_id ) as pbo \
-       on pm.purchase_order_id = pbo.purchase_order_id and pm.food_item_id = pbo.food_item_id  \
-group by po.restaurant_id,po.outlet_id,pm.food_item_id)  \
-select podata.taken,podata.outlet_id,podata.restaurant_id,sales.sold ,  \
-sales.food_item_name,sales.restaurant_name,sales.outlet_name,sales.outlet_short_name from podata \
- join \
-(select sum(soi.quantity) as sold,out.id as outlet_id, out.name as outlet_name,out.short_name as outlet_short_name, res.id as restaurant_id, \
-fi.id as food_item_id,fi.name as food_item_name,res.name as restaurant_name from sales_order so \
+                        select po.restaurant_id,po.outlet_id,pm.food_item_id,sum(coalesce(pbo.quantity,pm.quantity)) as taken ,outlet_name,outlet_short_name,fit.name as food_item_name, \
+                        r.name as restaurant_name \
+                        from (select  purchase_order.*,outlet.name as outlet_name,outlet.short_name as outlet_short_name from purchase_order \
+                        inner join outlet on  purchase_order.outlet_id = outlet.id \
+                        where outlet_id=$1 and \
+                        scheduled_delivery_time >= CASE WHEN(to_char(now(),'yyyy-MM-dd HH24:MI')::time < outlet.start_of_day) THEN \
+                        CONCAT(to_char(now() - interval '1' day,'yyyy-MM-dd '),outlet.start_of_day)::timestamp \
+                        else \
+                        CONCAT(to_char(now(),'yyyy-MM-dd '),outlet.start_of_day)::timestamp END \
+                        and scheduled_delivery_time < CASE WHEN(to_char(now(),'yyyy-MM-dd HH24:MI')::time > outlet.start_of_day) THEN  \
+                        CONCAT(to_char(now() + interval '1' day,'yyyy-MM-dd '),outlet.start_of_day)::timestamp \
+                        else \
+                        CONCAT(to_char(now(),'yyyy-MM-dd '),outlet.start_of_day)::timestamp END \
+                        ) as  po \
+                        join purchase_order_master_list pm  on po.id=pm.purchase_order_id \
+                        inner join food_item fit on fit.id = pm.food_item_id \
+                        inner join restaurant r on r.id = fit.restaurant_id \
+                        left outer join \
+                        (select purchase_order_id,substr(pb.barcode,3,3) as outlet, \
+                        base36_decode(substring(pb.barcode from 9 for 4))::integer as food_item_id, \
+                        sum(quantity) as quantity from purchase_order_batch pb \
+                        inner join purchase_order puo on puo.id = pb.purchase_order_id \
+                        inner join outlet ot on ot.id = puo.outlet_id \
+                        where to_timestamp(substr(barcode,13,2) || '-' ||substr(barcode,15,2) || '-' ||substr(barcode,17,4) || ' ' ||substr(barcode,21,2) || ':' ||substr(barcode,22,2),'dd-MM-yyyy HH24:mi')  >= CASE WHEN(to_char(now(),'yyyy-MM-dd HH24:MI')::time < ot.start_of_day) THEN \
+                        CONCAT(to_char(now() - interval '1' day,'yyyy-MM-dd '),ot.start_of_day)::timestamp \
+                        else \
+                        CONCAT(to_char(now(),'yyyy-MM-dd '),ot.start_of_day)::timestamp END \
+                        and to_timestamp(substr(barcode,13,2) || '-' ||substr(barcode,15,2) || '-' ||substr(barcode,17,4) || ' ' ||substr(barcode,21,2) || ':' ||substr(barcode,22,2),'dd-MM-yyyy HH24:mi') < CASE WHEN(to_char(now(),'yyyy-MM-dd HH24:MI')::time > ot.start_of_day) THEN \
+                        CONCAT(to_char(now() + interval '1' day,'yyyy-MM-dd '),ot.start_of_day)::timestamp \
+                        else \
+                        CONCAT(to_char(now(),'yyyy-MM-dd '),ot.start_of_day)::timestamp END \
+                        and substr(pb.barcode,3,3)::int=$1 \
+                        group by outlet,food_item_id,purchase_order_id ) as pbo \
+                        on pm.purchase_order_id = pbo.purchase_order_id and pm.food_item_id = pbo.food_item_id  \
+                        group by po.restaurant_id,po.outlet_id,pm.food_item_id,outlet_name,outlet_short_name,food_item_name,restaurant_name)  \
+                        select podata.taken,podata.outlet_id,podata.restaurant_id,COALESCE(sales.sold,0) as sold, \
+                        podata.food_item_name,podata.restaurant_name,podata.outlet_name,podata.outlet_short_name from podata \
+                        left outer join \
+                        (select sum(soi.quantity) as sold,out.id as outlet_id, out.name as outlet_name,out.short_name as outlet_short_name, res.id as restaurant_id, \
+                        fi.id as food_item_id,fi.name as food_item_name,res.name as restaurant_name from sales_order so \
                         inner join sales_order_items soi on soi.sales_order_id=so.id  \
                         inner join food_item fi on fi.id=soi.food_item_id \
-                        inner join outlet out on  out.id=so.outlet_id   \
+                        inner join outlet out on  out.id=so.outlet_id  \
                         inner join restaurant res on res.id=fi.restaurant_id \
-                        where  out.id=$1 and to_char(time,'DD-MM-YYYY')=to_char(now(),'DD-MM-YYYY') \
+                        where  out.id=$1 and time >= CASE WHEN(to_char(now(),'yyyy-MM-dd HH24:MI')::time < out.start_of_day) THEN \
+                        CONCAT(to_char(now() - interval '1' day,'yyyy-MM-dd '),out.start_of_day)::timestamp \
+                        else \
+                        CONCAT(to_char(now(),'yyyy-MM-dd '),out.start_of_day)::timestamp END \
+                        and time < CASE WHEN(to_char(now(),'yyyy-MM-dd HH24:MI')::time > out.start_of_day) THEN \
+                        CONCAT(to_char(now() + interval '1' day,'yyyy-MM-dd '),out.start_of_day)::timestamp \
+                        else \
+                        CONCAT(to_char(now(),'yyyy-MM-dd '),out.start_of_day)::timestamp END \
                         group by so.outlet_id,out.name,soi.food_item_id,fi.name,res.name ,res.id,out.id ,fi.id) as sales \
-on podata.outlet_id=sales.outlet_id and podata.restaurant_id =sales.restaurant_id and podata.food_item_id=sales.food_item_id;"
+                        on podata.outlet_id=sales.outlet_id and podata.restaurant_id =sales.restaurant_id and podata.food_item_id=sales.food_item_id;"
             , [outlet_id],
             function (query_err, taken_result) {
                 done();
