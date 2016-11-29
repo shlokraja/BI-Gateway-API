@@ -22,7 +22,7 @@ var get_barcode_list_from_firebase = function (firebase_url, restaurant_id, call
                     return callback(new Error(err, null));
                 }
 
-                var query_string = "select ordered.restaurant_id,ordered.outlet_id,ordered.orderedqty,pckd.pkdquantity,\
+                var query_string = "select ordered.restaurant_id,ordered.outlet_id,ordered.orderedqty,case when pckd.pkdquantity is not null then pckd.pkdquantity::integer  else 0 end as pkdquantity,\
 owl.name as outletname,owl.short_name as outlet_short_name,r.name as restaurant_name,r.short_name as restaurant_short_name,'/images/'||r.short_name||'.png' as image_url,r.entity ,ordered.session_name from ( \
 with barcodes as (select x.barlist->>'restaurant_id' as restaurant_id,x.barlist->>'barcode' as barcode , x.barlist->>'po_id' as po_id \
  from( select json_array_elements($1) as barlist  ) as x where substr(x.barlist->>'barcode',13,8)=to_char(now(),'DDMMYYYY') ) \
